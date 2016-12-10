@@ -21,6 +21,7 @@ namespace ZTMServer
 
 
         public List<string> stopsNames;
+        string resources = @"..\..\Resources\";
         List<stop> stopsGPS;
         List<BusOnStop> busesOnStops;
         List<Line> allLines;
@@ -50,9 +51,11 @@ namespace ZTMServer
         public class BusOnStop
         {
             public string line;
+            public int lineID;
             public int stopID;
             public string time;
             public int courseID;
+            public string dayOfWeek;
             public BusOnStop(string l, int s, TimeOpt t, int c)
             {
                 line = l;
@@ -60,11 +63,19 @@ namespace ZTMServer
                 time = t.toString();
                 courseID = c;
             }
+            public BusOnStop(int l, int s, TimeOpt t)
+            {
+                lineID = l;
+                stopID = s;
+                time = t.toString()+":00";
+                dayOfWeek = t.getDay();
+            }
         };
         public class Line
         {
             public string line;
             public int endStopId;
+            public string allStops;
             public Line(string l, int stopId)
             {
                 line = l;
@@ -102,8 +113,7 @@ namespace ZTMServer
             public int id;
             public string name;
             public int[] days = new int[7];
-
-
+            
             public dayOptions(int i, string n, int pon, int wt, int sr, int czw, int pt, int sob, int nd)
             {
                 id = i;
@@ -116,6 +126,7 @@ namespace ZTMServer
                 days[(int)daysWeek.PT] = pt;
                 days[(int)daysWeek.SOB] = sob;
                 days[(int)daysWeek.ND] = nd;
+                
             }
 
         }
@@ -139,12 +150,25 @@ namespace ZTMServer
             public string dayOfWeek;
             public int dayOfWeekNum;
 
-            string[] daysNames = { "poniedzialek", "wtorek", "sroda", "czwartek",
-                                    "piatek", "sobota", "niedziela"};
+            string[] daysNames = { "Poniedziałek", "Wtorek", "Środa", "Czwartek",
+                                    "Piątek", "Sobota", "Niedziela"};
+
+            static public bool isMoring(string time)
+            {
+                int h = int.Parse(time.Substring(0, 2));
+              
+                return (h < 15);
+            }
+
             public bool isEvening()
             {
                 return (hours > 12);
             }
+            public string getDay()
+            {
+                return daysNames[dayOfWeekNum];
+            }
+
             public TimeOpt(int m, int h)
             {
                 minutes = m;
@@ -155,6 +179,12 @@ namespace ZTMServer
             {
                 minutes = int.Parse(time.Substring(3, 2));
                 hours = int.Parse(time.Substring(0, 2));
+            }
+            public TimeOpt(string time, int day)
+            {
+                minutes = int.Parse(time.Substring(3, 2));
+                hours = int.Parse(time.Substring(0, 2));
+                dayOfWeekNum = day;
             }
             public TimeOpt(TimeOpt time)
             {
@@ -176,12 +206,18 @@ namespace ZTMServer
                 if (hours >= 24)
                 {
                     hours = 0;
+                    dayOfWeekNum = (dayOfWeekNum + 1) % 7;
                 }
                 minutes = minutes % 60;
             }
             public string toString()
             {
                 return hours + ":" + minutes;
+            }
+
+            public bool isEarlier(string firstTime)
+            {
+                return true;
             }
         };
         public class OneVariant
@@ -234,29 +270,30 @@ namespace ZTMServer
             }
             public void addCourse(dayOptions dO, string t, List<BusOnStop> busesOnStops, List<Course> allCourses)
             {
-                TimeOpt time = new TimeOpt(t);
-               
-                foreach (OneVariant c in course)
-                    time.addMinutes(c.time);
-
-              
-                allCourses.Add(new Course(lineID, new TimeOpt(t), new TimeOpt(time), dO));
-                int CourseID = allCourses.Count - 1;
-
-                foreach (OneVariant c in course)
+                for(int i = 0; i < dO.days.Length; i++)
                 {
-                    time.addMinutes(c.time);
-                    busesOnStops.Add(new BusOnStop(line, c.stopID, time, CourseID));
+                    int day = i;
+                    if (dO.days[i] == 0)
+                        continue;
+                    if (dO.days[i] == 2 && TimeOpt.isMoring(t))
+                        day = (day + 1) % 7;
+                    TimeOpt time = new TimeOpt(t, day);
+                    foreach (OneVariant c in course)
+                    {
+                        if (c.stopID == -1)
+                            System.Console.WriteLine("dupka");
+                        time.addMinutes(c.time);
+                        // busesOnStops.Add(new BusOnStop(line, c.stopID, time, CourseID));
+                        busesOnStops.Add(new BusOnStop(lineID, c.stopID, time));
+                    }
                 }
-
-
             }
-
         }
 
         //helping functions
         public static dayOptions getDaysHours(string option)
         {
+            option = option.Replace(".", "");
             foreach (dayOptions o in daysHours)
             {
                 if (option == o.name)
@@ -270,7 +307,7 @@ namespace ZTMServer
             string[] lines = System.IO.File.ReadAllLines(path);
             stopsGPS = new List<stop>();
             int i = 0;
-            int id = 0;
+                int id = 0;
             while (i < lines.Length)
             {
                 string line = lines[i];
@@ -423,7 +460,7 @@ namespace ZTMServer
             return name;
         }
 
-        public void parseName(string name)
+        public string parseName(string name)
         {
             name = validateName(name);
 
@@ -439,20 +476,24 @@ namespace ZTMServer
             }
             if (!isDup)
                 stopsNames.Add(name);
+            return name;
         }
 
 
         //functions for managing buttons
+
         //get data from OpenStreetMap
         private void button1_Click(object sender, EventArgs e)
         {
-            getStopsOpenStreet(@"maps\mapMedium");
+            string output = textBox1.Text;
+            textBox1.Text = output + "Pobieram dane z OpenStreetMap\n";
+            getStopsOpenStreet(resources + @"maps\map");
+            textBox1.Text = output + "Pobrano dane z OpenStreetMap" + Environment.NewLine;
         }
 
-        //get data from zip uploaded from ZTM
-        private void button3_Click(object sender, EventArgs e)
+        private void getDatafromZTM()
         {
-            string path = @"rozklady";
+            string path = resources + "rozklady";
             string[] dirs = Directory.GetDirectories(path);
             path = dirs[0];
             dirs = Directory.GetDirectories(path);
@@ -473,16 +514,20 @@ namespace ZTMServer
                     else if (file.Contains("kursy"))
                         kurs.Add(file);
                 }
+                //   List<string> stopsToFile = new List<string>();
+                string stopsToFile = "";
                 foreach (string file in warianty)
-                { 
+                {
                     int direction = int.Parse(file.Substring(file.Length - 5, 1));
                     string[] lines = System.IO.File.ReadAllLines(file, Encoding.Default);
                     List<string> opts;
                     string lineNum = getOptsFromCSV(lines[0], true)[0];
+                    if (lineNum == "110")
+                        opts = null;
 
                     List<string> lastLineopts = getOptsFromCSV(lines[lines.Length - 1], false);
                     string lastName = lastLineopts[3];
-                    parseName(lastName);
+                    lastName = parseName(lastName);
                     int dirID = getStopID(lastName);
                     allLines.Add(new Line(lineNum, dirID));
                     foreach (string line in lines)
@@ -504,14 +549,22 @@ namespace ZTMServer
                             continue;
                         }
                         opts = getOptsFromCSV(line, false);
-                        string name = opts[3];
-                        parseName(name);
+                        string name = parseName(opts[3]);
+                        //  stopsToFile.Add(name);
+                        stopsToFile += name + ",";
                         foreach (Variant v in variants)
                         {
-                            if (v.nVariant < opts.Count && opts[v.nVariant] != "") 
+                            if (v.dir == direction && v.nVariant < opts.Count && opts[v.nVariant] != "")
+                            {
                                 v.addOpt(getStopID(name), int.Parse(opts[v.nVariant]));
+
+                            }
                         }
                     }
+                    //pliczek z trasa zapisany
+                    // File.WriteAllLines(resources + @"stops\line" + lineNum + (allLines.Count - 1), stopsToFile);
+                    allLines[allLines.Count - 1].allStops = stopsToFile;
+                    stopsToFile = "";
                 }
                 foreach (string file in kurs)
                 {
@@ -539,82 +592,47 @@ namespace ZTMServer
                 }
             }
         }
-
-        private void button2_Click(object sender, EventArgs e)
+      
+        //get data from zip uploaded from ZTM
+        private void button3_Click(object sender, EventArgs e)
         {
-            File.WriteAllLines(@"..\Resources\testy\stopNames", stopsNames);
-
-            List<string> justAllLines = new List<string>();
-            for (int i = 0; i < stopsNames.Count; i++)
-                justAllLines.Add(i + stopsNames[i]);
-            File.WriteAllLines(@"..\Resources\testy\stopsGPS", justAllLines);
-            justAllLines = new List<string>();
-            foreach (stop b in stopsGPS)
-                justAllLines.Add(stopsGPS.IndexOf(b) + "" + double.Parse(b.lat, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.NumberFormatInfo.InvariantInfo)
-            + "" + double.Parse(b.lon, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.NumberFormatInfo.InvariantInfo)
-            + b.name + b.stopId);
-            File.WriteAllLines(@"..\Resources\testy\stopsGPS", justAllLines);
-
-            justAllLines = new List<string>();
-            foreach (dayOptions b in daysHours)
-            {
-                string days = "";
-                foreach (int d in b.days)
-                    days += d + "-";
-                justAllLines.Add(b.id + b.name + days);
-
-            }
-            File.WriteAllLines(@"..\Resources\testy\variants", justAllLines);
-
-            justAllLines = new List<string>();
-            foreach (Line b in allLines)
-                justAllLines.Add(allLines.IndexOf(b) + "" + b.line + "" + b.endStopId);
-            File.WriteAllLines(@"..\Resources\testy\lines", justAllLines);
-
-            justAllLines = new List<string>();
-            foreach (Course b in allCourses)
-                justAllLines.Add(allCourses.IndexOf(b) + "" + b.lineId + "" + b.start + b.end);
-            File.WriteAllLines(@"..\Resources\testy\courses", justAllLines);
-
-            justAllLines = new List<string>();
-            foreach (BusOnStop b in busesOnStops)
-                justAllLines.Add(busesOnStops.IndexOf(b) + "" + b.courseID + "" + b.stopID + "" + b.time);
-            File.WriteAllLines(@"..\Resources\testy\busesOnStops", justAllLines);
-
+            string output = textBox1.Text;
+            textBox1.Text = output + "Pobieram dane ze strony ZTM" + Environment.NewLine;
+            getDatafromZTM();
+            textBox1.Text = output + "Pobrano dane ze strony ZTM" + Environment.NewLine;
         }
 
-        private void Form1_Load(object sender, EventArgs e)
-        {
-
-        }
-
+        //put GPS to database
         private void button4_Click(object sender, EventArgs e)
         {
-            MySqlConnection connection = new MySqlConnection("SERVER=db4free.net;PORT=3306;DATABASE=ztmobile;UID=ztmobile;PWD=admin123;");
+            string output = textBox1.Text + "Wrzucam StopGPS do bazy: ";
+            MySqlConnection connection = new MySqlConnection("SERVER=s12.hekko.net.pl;PORT=3306;DATABASE=ztmobile_0;UID=ztmobile_0;PWD=admin123;");
             MySqlCommand command;
             string query;
-            bool result;
+            Boolean result;
 
             foreach (stop s in stopsGPS)
             {
                 try
                 {
                     connection.Open();
-                    query = "INSERT INTO GPS(ID,Name,Lat,Lon,STOP_ID) VALUES(@id,@name,@lat,@lon,@stopId)";
+                    query = "INSERT INTO StopGPS(ID,Lat,Lon,Name,StopID) VALUES(@id,@lat,@lon,@name,@stopId)";
 
                     command = new MySqlCommand(query, connection);
                     command.Parameters.AddWithValue("@id", s.id);
-                    command.Parameters.AddWithValue("@name", s.name);
                     command.Parameters.AddWithValue("@lat", double.Parse(s.lat, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.NumberFormatInfo.InvariantInfo));
                     command.Parameters.AddWithValue("@lon", double.Parse(s.lon, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.NumberFormatInfo.InvariantInfo));
+                    command.Parameters.AddWithValue("@name", s.name);
                     command.Parameters.AddWithValue("@stopId", s.stopId);
                     command.ExecuteNonQuery();
                     command.Parameters.Clear();
                     result = true;
+
+                    textBox1.Text = output + stopsGPS.IndexOf(s) + "/" + stopsGPS.Count + "\n";
                 }
                 catch (Exception ex)
                 {
-                    label1.Text = "Błąd";
+                    textBox1.Text = "Błąd podczas wrzucania do tabeli StopGPS";
                     result = false;
                 }
                 finally
@@ -623,10 +641,140 @@ namespace ZTMServer
                 }
                 if (!result)
                     return;
-                label1.Text = "Udalo sie";
-
             }
-            
+        }
+
+        //put stops to database
+        private void button6_Click(object sender, EventArgs e)
+        {
+
+            string output = textBox1.Text + "Wrzucam Stops do bazy: ";
+
+            MySqlConnection connection = new MySqlConnection("SERVER=s12.hekko.net.pl;PORT=3306;DATABASE=ztmobile_0;UID=ztmobile_0;PWD=admin123;");
+            MySqlCommand command;
+            string query;
+            Boolean result;
+
+            foreach (string s in stopsNames)
+            {
+                try
+                {
+                    connection.Open();
+                    query = "INSERT INTO Stops(ID,Name) VALUES(@id,@name)";
+
+                    command = new MySqlCommand(query, connection);
+                    command.Parameters.AddWithValue("@id", stopsNames.IndexOf(s));
+                    command.Parameters.AddWithValue("@name", s);
+                    command.ExecuteNonQuery();
+                    command.Parameters.Clear();
+                    result = true;
+
+                    textBox1.Text = output + stopsNames.IndexOf(s) + "/" + stopsNames.Count + "\n";
+                }
+                catch (Exception ex)
+                {
+                    textBox1.Text = "Błąd podczas wrzucania do tabeli stpos";
+                    result = false;
+                }
+                finally
+                {
+                    connection.Close();
+                }
+                if (!result)
+                    return;
+            }
+        }
+
+        //put lines to database
+        private void button7_Click(object sender, EventArgs e)
+        {
+            string output = textBox1.Text + "Wrzucam BusLines do bazy: ";
+
+            MySqlConnection connection = new MySqlConnection("SERVER=s12.hekko.net.pl;PORT=3306;DATABASE=ztmobile_0;UID=ztmobile_0;PWD=admin123;");
+            MySqlCommand command;
+            string query;
+            Boolean result;
+
+            foreach (Line l in allLines)
+            {
+                try
+                {
+                    connection.Open();
+                    query = "INSERT INTO BusLines(ID,Name,Direction,DirID,AllStops) VALUES(@id,@name,@dir,@dirID,@file)";
+
+                    string filePath = resources + @"stops\line" + l.line + allLines.IndexOf(l);
+                    MemoryStream stream = new MemoryStream();
+                    byte[] byte_arr = System.IO.File.ReadAllBytes(filePath);
+                    String file_str = System.Convert.ToBase64String(byte_arr);
+
+                    command = new MySqlCommand(query, connection);
+                    command.Parameters.AddWithValue("@id", allLines.IndexOf(l));
+                    command.Parameters.AddWithValue("@name", l.line);
+                    command.Parameters.AddWithValue("@dir", stopsNames[l.endStopId]);
+                    command.Parameters.AddWithValue("@dirID", l.endStopId);
+                    command.Parameters.AddWithValue("@file", l.allStops);
+                    command.ExecuteNonQuery();
+                    command.Parameters.Clear();
+                    result = true;
+                    textBox1.Text = output + allLines.IndexOf(l) + "/" + allLines.Count + "\n";
+                }
+                catch (Exception ex)
+                {
+                    textBox1.Text = "Błąd podczas wrzucania do tabeli BusLines";
+                    result = false;
+                }
+                finally
+                {
+                    connection.Close();
+                }
+                if (!result)
+                    return;
+            }
+
+        }
+
+        //put all table to database
+        private void button8_Click(object sender, EventArgs e)
+        {
+            string output = textBox1.Text + "Wrzucam BusOnStop do bazy: ";
+
+            MySqlConnection connection = new MySqlConnection("SERVER=s12.hekko.net.pl;PORT=3306;DATABASE=ztmobile_0;UID=ztmobile_0;PWD=admin123;");
+            MySqlCommand command;
+            string query;
+            Boolean result;
+
+            foreach (BusOnStop b in busesOnStops)
+            {
+                    try
+                    {
+            //            connection.Open();
+           //             query = "INSERT INTO BusOnStop(LineID,StopID,Hour,Day) VALUES(@line,@stop,@hour,@day)";
+
+
+           //             command = new MySqlCommand(query, connection);
+            //            command.Parameters.AddWithValue("@line", b.lineID);
+              //          command.Parameters.AddWithValue("@stop", b.stopID);
+                //        command.Parameters.AddWithValue("@hour", b.time);
+                  //      command.Parameters.AddWithValue("@day", b.dayOfWeek);
+                    //    command.ExecuteNonQuery();
+                      //  command.Parameters.Clear();
+                        result = true;
+                    textBox1.Text = output + busesOnStops.IndexOf(b) + "/" + busesOnStops.Count + "\n";
+                    }
+                    catch (Exception ex)
+                    {
+                        textBox1.Text = "Błąd podczas wrzucania do tabeli BusOnStop";
+                        result = false;
+                    }
+                    finally
+                    {
+                        //connection.Close();
+                    }
+                    if (!result)
+                        return;
+                
+            }
+
         }
 
         private void button5_Click(object sender, EventArgs e)
@@ -646,7 +794,7 @@ namespace ZTMServer
                 if (!someFlag)
                     names.Add(s);
             }
-            File.WriteAllLines(@"..\Resources\testy\namesCounter", names);
+            File.WriteAllLines(resources + @"testy\namesCounter", names);
 
 
             List<string> gpses = new List<String>();
@@ -664,12 +812,18 @@ namespace ZTMServer
                 if (!someFlag)
                     gpses.Add(g.name);
             }
-            File.WriteAllLines(@"..\Resources\testy\gpsCounter", gpses);
+            File.WriteAllLines(resources + @"testy\gpsCounter", gpses);
         }
-
-        private void label1_Click(object sender, EventArgs e)
+        
+        private void button2_Click_1(object sender, EventArgs e)
         {
 
+            getDatafromZTM();
+            getStopsOpenStreet(resources + @"maps\map");
+            button4_Click(sender, e);
+            button6_Click(sender, e);
+            button7_Click(sender, e);
+            button8_Click(sender, e);
         }
     }
 }
